@@ -1,0 +1,116 @@
+from scipy.io import arff 
+import numpy as np
+import pandas as pd
+import time 
+from scipy.stats import pearsonr
+
+# Load data
+data, metadata = arff.loadarff("veh-prime.arff")
+
+x = pd.DataFrame(data)
+
+x['CLASS'] = np.where(x['CLASS'] == b'noncar', 0, 1)
+
+def pearson(x,y):
+    
+    n = len(x)
+    sum_sq_x = 0
+    sum_sq_y = 0
+    sum_coproduct = 0
+    mean_x = 0
+    mean_y = 0
+    
+    for i in range(n):
+        
+        sum_sq_x += x[i]**2
+        sum_sq_y += y[i]**2
+        sum_coproduct += x[i] * y[i]
+        mean_x += x[i]
+        mean_y += y[i]
+    
+    mean_x = mean_x / n
+    mean_y = mean_y / n
+    pop_sd_x = np.sqrt((sum_sq_x / n) - (mean_x**2))
+    pop_sd_y = np.sqrt((sum_sq_y / n) - (mean_y**2))
+    cov_x_y = (sum_coproduct / n) - (mean_x * mean_y)
+    correlation = cov_x_y / (pop_sd_x * pop_sd_y)
+    
+    return correlation
+
+
+#(a) List the features from highest to lowest, along with their values. Why would one be interested in the absolute value of 
+#rather than the raw value?
+
+
+X = x.iloc[:, :-1]
+Y = x.iloc[:, -1]
+
+r = []
+
+for i in range(X.shape[1]):  
+    corr, _ = pearsonr(X.iloc[:, i], Y)
+    r.append(np.abs(corr))
+
+df = pd.DataFrame({'Feature Number': range(len(r)), '|r| score': r})
+
+df = df.sort_values(by='|r| score', ascending=False).reset_index(drop=True)
+
+high_low_r = df['Feature Number']
+
+print(df)
+
+
+#(b) Select the features that have the highest values of and run LOOCV on the dataset restricted to only those 
+#features. Which value of gives the highest LOOCV classification accuracy and what is the value of this optimal accuracy?
+
+import numpy as np
+import pandas as pd
+import time
+from collections import Counter
+
+def KNN_LOOCV(df, feats, k=7):
+    X = df.iloc[:, :-1].values
+    y = df.iloc[:, -1].values
+    rows, cols = X.shape
+    
+    accuracies = []
+    
+    for i in feats:
+        correct_classifications = 0
+        
+        for index in range(rows):
+            test_instance = X[index, i]
+            test_label = y[index]
+            
+            train_mask = np.arange(rows) != index
+            X_train = X[train_mask][:, i]
+            y_train = y[train_mask]
+            
+            distances = np.sqrt(np.square(X_train - test_instance))
+            
+            neighbors_indices = np.argpartition(distances, k)[:k]
+            
+            majority_vote = Counter(y_train[neighbors_indices]).most_common(1)[0][0]
+            
+            if majority_vote == test_label:
+                correct_classifications += 1
+
+        accuracy = (correct_classifications / rows) * 100
+        print(f"Accuracy of using feature {i} is: {accuracy:.2f}%")
+
+        accuracies.append(accuracy)
+    
+    return accuracies
+
+start = time.time()
+accuracies = KNN_LOOCV(x, high_low_r, k=7)
+end = time.time()
+print(f"Time to run KNN LOOCV: {end - start:.2f} seconds")
+
+df = pd.DataFrame({
+    "m": list(range(1, len(high_low_r) + 1)),   
+    "Feature #": high_low_r,             
+    "Aggregating Accuracy": accuracies 
+})
+
+print(df)
